@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 
 
 //Criação filmes
-routes.post("/filmes",async (req, res) => {
+routes.post("/filmes", async (req, res) => {
     try {
         const { titulo, anoLancamento, disponivel, atores } = req.body;
 
@@ -16,19 +16,14 @@ routes.post("/filmes",async (req, res) => {
                 titulo,
                 anoLancamento,
                 disponivel,
+                atores: {
+                    connect: atores.map((atorId) => ({ id: atorId })),
+                },
+            },
+            include: {
+                atores: true,
             },
         });
-
-        if (atores && atores.length > 0) {
-            for (const atorId of atores) {
-                await prisma.filmeAtor.create({
-                    data: {
-                        filmeId: filme.id,
-                        atorId,
-                    },
-                });
-            }
-        }
 
         return res.status(201).json(filme);
     } catch (error) {
@@ -40,7 +35,9 @@ routes.post("/filmes",async (req, res) => {
 //Lista filmes
 routes.get("/filmes", async (req, res) => {
     try {
-        const filmes = await prisma.filme.findMany();
+        const filmes = await prisma.filme.findMany({
+            include: { atores: true } 
+        });
         return res.status(200).json(filmes);
     } catch (error) {
         console.error("Erro ao buscar filmes:", error);
@@ -73,12 +70,12 @@ routes.put("/editarFilmes", async (req, res) => {
                 anoLancamento,
                 disponivel,
                 atores: {
-                    set: atores 
-                }
+                    set:  atores.map((atorId) => ({ id: atorId })),
+                },
             },
             include: {
                 atores: true 
-            }
+            },
         });
         
         return res.status(200).json(filme);
@@ -121,21 +118,16 @@ routes.post("/atores", async (req, res) => {
         const ator = await prisma.ator.create({
             data: {
                 nome,
-                dataNascimento,
+                dataNascimento: new Date(dataNascimento),
                 nacionalidade,
+                filmes: {
+                    connect: filmes.map((filmeId) => ({ id: filmeId })),
+                },
+            },
+            include: {
+                filmes: true,
             },
         });
-
-        if (filmes && filmes.length > 0) {
-            for (const filmeId of filmes) {
-                await prisma.filmeAtor.create({
-                    data: {
-                        filmeId,
-                        atorId: ator.id,
-                    },
-                });
-            }
-        }
 
         return res.status(201).json(ator);
     } catch (error) {
@@ -147,7 +139,9 @@ routes.post("/atores", async (req, res) => {
 //Lista atores
 routes.get("/atores", async (req, res) => {
     try {
-        const atores = await prisma.ator.findMany();
+        const atores = await prisma.ator.findMany({
+            include: { filmes: true } 
+        });
         return res.status(200).json(atores);
     } catch (error) {
         console.error("Erro ao buscar atores:", error);
@@ -158,7 +152,7 @@ routes.get("/atores", async (req, res) => {
 //Editar atores
 routes.put("/editarAtores", async (req, res) => {
     try {
-        const { nome, dataNascimento, nacionalidade, filmes } = req.body;
+        const { id, nome, dataNascimento, nacionalidade, filmes } = req.body;
 
         if (!id){
             return res.status(400).json("Id é obrigatório")
@@ -176,15 +170,15 @@ routes.put("/editarAtores", async (req, res) => {
             },
             data:{
                 nome,
-                dataNascimento,
+                dataNascimento: new Date(dataNascimento),
                 nacionalidade,
                 filmes: {
-                    set: filmes 
-                }
+                    set: filmes.map((filmeId) => ({ id: filmeId })),
+                },
             },
             include: {
                 filmes: true 
-            }
+            },
         });
         
         return res.status(200).json(ator);
