@@ -19,6 +19,8 @@ model Filme {
   titulo          String
   anoLancamento   Int
   disponivel      Boolean
+  categoria       String?
+  imagem          String?
 
   atores          Ator[]   @relation("FilmeAtores")
 }
@@ -28,6 +30,7 @@ model Ator {
   nome            String
   dataNascimento  DateTime
   nacionalidade   String
+  imagem          String?
   
   filmes          Filme[]  @relation("FilmeAtores")
 }

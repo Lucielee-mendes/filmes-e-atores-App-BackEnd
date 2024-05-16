@@ -1,23 +1,47 @@
 const express = require("express");
 
 const routes = express.Router();
+const multer = require('multer');
+
 const {PrismaClient} = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
+const uploadImg = require('./config/config');
 
+
+
+routes.get('/getImagem/:filename', (req, res) => {
+    const filename = req.params.filename;
+    const filePath = path.join(__dirname, '..', 'uploads', filename);
+
+    res.sendFile(filePath, (err) => {
+        if (err) {
+            console.error('Erro ao enviar o arquivo:', err);
+            res.status(404).json({ error: 'Imagem não encontrada' });
+        }
+    });
+});
+
+const upload = multer(uploadImg.upload());
+
+    
 //Criação filmes
-routes.post("/filmes", async (req, res) => {
+routes.post("/filmes", upload.single('imagem'), async (req, res) => {
+    const json = req.body.json ? JSON.parse(req.body.json) : {}
+    const { titulo, anoLancamento, disponivel, categoria, atores } = json;
+    
     try {
-        const { titulo, anoLancamento, disponivel, atores } = req.body;
-
+        
         const filme = await prisma.filme.create({
             data: {
                 titulo,
                 anoLancamento,
                 disponivel,
+                categoria,
+                imagem: req.file.filename,
                 atores: {
-                    connect: atores.map((atorId) => ({ id: atorId })),
+                     connect: atores ? atores.map(id => ({ id })) : [] 
                 },
             },
             include: {
@@ -70,7 +94,7 @@ routes.put("/editarFilmes", async (req, res) => {
                 anoLancamento,
                 disponivel,
                 atores: {
-                    set:  atores.map((atorId) => ({ id: atorId })),
+                    set: atores ? atores.map((atorId) => ({ id: atorId })) : [],
                 },
             },
             include: {
@@ -111,7 +135,7 @@ routes.delete("/deletarFilme/:id", async (req, res) => {
 
 
 //Criação atores
-routes.post("/atores", async (req, res) => {
+routes.post("/atores",  upload.single('imagem'), async (req, res) => {
     try {
         const { nome, dataNascimento, nacionalidade, filmes } = req.body;
 
@@ -120,8 +144,9 @@ routes.post("/atores", async (req, res) => {
                 nome,
                 dataNascimento: new Date(dataNascimento),
                 nacionalidade,
+                imagem: req.file.filename,
                 filmes: {
-                    connect: filmes.map((filmeId) => ({ id: filmeId })),
+                    connect: filmes ? filmes.map(id => ({ id })) : []
                 },
             },
             include: {
@@ -164,6 +189,16 @@ routes.put("/editarAtores", async (req, res) => {
             return res.status(404).json("Ator não encontrado")
         }
 
+        if (filmes){
+            const filmesExistentes = await prisma.filme.findMany({
+                where: { id: {in: filmes }}
+            });
+
+            if (filmesExistentes.length !== filmes.length) {
+                return res.status(404).json("Um ou mais filmes não encontrados");
+            }
+        }
+
         const ator = await prisma.ator.update({
             where: {
                 id,
@@ -173,7 +208,7 @@ routes.put("/editarAtores", async (req, res) => {
                 dataNascimento: new Date(dataNascimento),
                 nacionalidade,
                 filmes: {
-                    set: filmes.map((filmeId) => ({ id: filmeId })),
+                    set: filmes ? filmes.map((filmeId) => ({ id: filmeId })) : [],
                 },
             },
             include: {
