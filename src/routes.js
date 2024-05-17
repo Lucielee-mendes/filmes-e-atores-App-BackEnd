@@ -1,11 +1,13 @@
 const express = require("express");
-
+const path = require('path');
 const routes = express.Router();
 const multer = require('multer');
 
-const {PrismaClient} = require("@prisma/client");
+const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
+
+
 
 const uploadImg = require('./config/config');
 
@@ -25,14 +27,14 @@ routes.get('/getImagem/:filename', (req, res) => {
 
 const upload = multer(uploadImg.upload());
 
-    
+
 //Criação filmes
 routes.post("/filmes", upload.single('imagem'), async (req, res) => {
     const json = req.body.json ? JSON.parse(req.body.json) : {}
     const { titulo, anoLancamento, disponivel, categoria, atores } = json;
-    
+
     try {
-        
+
         const filme = await prisma.filme.create({
             data: {
                 titulo,
@@ -41,7 +43,7 @@ routes.post("/filmes", upload.single('imagem'), async (req, res) => {
                 categoria,
                 imagem: req.file.filename,
                 atores: {
-                     connect: atores ? atores.map(id => ({ id })) : [] 
+                    connect: atores ? atores.map(id => ({ id })) : []
                 },
             },
             include: {
@@ -60,7 +62,7 @@ routes.post("/filmes", upload.single('imagem'), async (req, res) => {
 routes.get("/filmes", async (req, res) => {
     try {
         const filmes = await prisma.filme.findMany({
-            include: { atores: true } 
+            include: { atores: true }
         });
         return res.status(200).json(filmes);
     } catch (error) {
@@ -69,39 +71,79 @@ routes.get("/filmes", async (req, res) => {
     }
 });
 
-
-//Editar filmes
-routes.put("/editarFilmes", async (req, res) => {
+routes.get("/filmes/:id", async (req, res) => {
     try {
-        const { id, titulo, anoLancamento, disponivel, atores } = req.body;
+        const { id } = req.params;
+        const filme = await prisma.filme.findUnique({
+            where: { id: parseInt(id) },
+            include: { atores: true }
+        });
 
-        if (!id){
-            return res.status(400).json("Id é obrigatório")
+        if (!filme) {
+            return res.status(404).json({ error: "Filme não encontrado" });
         }
 
-        const filmeExiste = await prisma.filme.findUnique({where: {id} });
+        return res.status(200).json(filme);
+    } catch (error) {
+        console.error("Erro ao buscar filme:", error);
+        return res.status(500).json({ error: "Erro ao buscar filme" });
+    }
+});
+
+//Editar filmes
+routes.put("/editarFilmes/:id", upload.single('imagem'), async (req, res) => {
+    try {
+        const { id } = req.params; // Obter o ID do filme dos parâmetros da URL
+        const { titulo, anoLancamento, disponivel, atores } = req.body;
+
+        const filmeId = parseInt(id);
+
+        if (!filmeId) {
+            return res.status(400).json("Id é obrigatório");
+        }
+
+        const filmeExiste = await prisma.filme.findUnique({ where: { id: filmeId } });
 
         if (!filmeExiste) {
-            return res.status(404).json("Filme não encontrado")
+            return res.status(404).json("Filme não encontrado");
+        }
+
+        // Monta os dados a serem atualizados
+        const updateData = {
+            titulo,
+            anoLancamento: parseInt(anoLancamento),
+            disponivel: disponivel === 'true',
+        };
+
+        // Se um arquivo de imagem foi enviado, adiciona ao updateData
+        if (req.file && req.file.filename) {
+            updateData.imagem = req.file.filename;
+        }
+
+        // Processa os atores
+        if (atores) {
+            try {
+                const atoresArray = typeof atores === 'string' ? JSON.parse(atores) : atores;
+                updateData.atores = {
+                    set: Array.isArray(atoresArray) ? atoresArray.map((atorId) => ({ id: parseInt(atorId) })) : [],
+                };
+            } catch (error) {
+                return res.status(400).json({ error: "Formato de atores inválido" });
+            }
+        } else {
+            updateData.atores = { set: [] };
         }
 
         const filme = await prisma.filme.update({
             where: {
-                id,
+                id: filmeId,
             },
-            data:{
-                titulo,
-                anoLancamento,
-                disponivel,
-                atores: {
-                    set: atores ? atores.map((atorId) => ({ id: atorId })) : [],
-                },
-            },
+            data: updateData,
             include: {
-                atores: true 
+                atores: true,
             },
         });
-        
+
         return res.status(200).json(filme);
     } catch (error) {
         console.error("Erro ao editar filme:", error);
@@ -109,13 +151,15 @@ routes.put("/editarFilmes", async (req, res) => {
     }
 });
 
+
+
 //Excluir filme
 routes.delete("/deletarFilme/:id", async (req, res) => {
     try {
         const { id } = req.params;
         const intId = parseInt(id);
 
-        if (!intId){
+        if (!intId) {
             return res.status(400).json("Id é obrigatório")
         }
 
@@ -135,14 +179,17 @@ routes.delete("/deletarFilme/:id", async (req, res) => {
 
 
 //Criação atores
-routes.post("/atores",  upload.single('imagem'), async (req, res) => {
+routes.post("/atores", upload.single('imagem'), async (req, res) => {
+    const json = req.body.json ? JSON.parse(req.body.json) : {}
+    const { nome, dataNascimento, nacionalidade, filmes } = json;
+
     try {
-        const { nome, dataNascimento, nacionalidade, filmes } = req.body;
+
 
         const ator = await prisma.ator.create({
             data: {
                 nome,
-                dataNascimento: new Date(dataNascimento),
+                dataNascimento: new Date(dataNascimento).toISOString(),
                 nacionalidade,
                 imagem: req.file.filename,
                 filmes: {
@@ -165,7 +212,7 @@ routes.post("/atores",  upload.single('imagem'), async (req, res) => {
 routes.get("/atores", async (req, res) => {
     try {
         const atores = await prisma.ator.findMany({
-            include: { filmes: true } 
+            include: { filmes: true }
         });
         return res.status(200).json(atores);
     } catch (error) {
@@ -174,48 +221,66 @@ routes.get("/atores", async (req, res) => {
     }
 });
 
-//Editar atores
-routes.put("/editarAtores", async (req, res) => {
+routes.get("/atores/:id", async (req, res) => {
     try {
-        const { id, nome, dataNascimento, nacionalidade, filmes } = req.body;
+        const { id } = req.params;
+        const atores = await prisma.ator.findUnique({
+            where: { id: parseInt(id) },
+            include: { filmes: true }
+        });
 
-        if (!id){
-            return res.status(400).json("Id é obrigatório")
+        if (!atores) {
+            return res.status(404).json({ error: "Ator não encontrado" });
         }
 
-        const atorExiste = await prisma.ator.findUnique({where: {id} });
+        return res.status(200).json(atores);
+    } catch (error) {
+        console.error("Erro ao buscar ator:", error);
+        return res.status(500).json({ error: "Erro ao buscar ator" });
+    }
+});
+
+//Editar atores
+routes.put("/editarAtores/:id", upload.single('imagem'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { nome, nacionalidade, filmes } = req.body;
+        const atorId = parseInt(id);
+
+        if (!atorId) {
+            return res.status(400).json("Id é obrigatório");
+        }
+
+        const atorExiste = await prisma.ator.findUnique({ where: { id: atorId } });
 
         if (!atorExiste) {
-            return res.status(404).json("Ator não encontrado")
+            return res.status(404).json("Ator não encontrado");
         }
 
-        if (filmes){
-            const filmesExistentes = await prisma.filme.findMany({
-                where: { id: {in: filmes }}
-            });
+        // Construir o objeto de atualização
+        const updateData = {
+            nome,
+            nacionalidade,
+            filmes: {
+                set: filmes ? filmes.map((filmeId) => ({ id: parseInt(filmeId) })) : [],
+            },
+        };
 
-            if (filmesExistentes.length !== filmes.length) {
-                return res.status(404).json("Um ou mais filmes não encontrados");
-            }
+        // Se a imagem estiver presente no request, adicioná-la ao objeto de atualização
+        if (req.file) {
+            updateData.imagem = req.file.filename;
         }
 
         const ator = await prisma.ator.update({
             where: {
-                id,
+                id: atorId,
             },
-            data:{
-                nome,
-                dataNascimento: new Date(dataNascimento),
-                nacionalidade,
-                filmes: {
-                    set: filmes ? filmes.map((filmeId) => ({ id: filmeId })) : [],
-                },
-            },
+            data: updateData,
             include: {
-                filmes: true 
+                filmes: true,
             },
         });
-        
+
         return res.status(200).json(ator);
     } catch (error) {
         console.error("Erro ao editar Ator:", error);
@@ -229,7 +294,7 @@ routes.delete("/deletarAtor/:id", async (req, res) => {
         const { id } = req.params;
         const intId = parseInt(id);
 
-        if (!intId){
+        if (!intId) {
             return res.status(400).json("Id é obrigatório")
         }
 
